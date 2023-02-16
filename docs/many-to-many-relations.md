@@ -254,45 +254,110 @@ const categoriesWithQuestions = await dataSource
 ## Many-to-many relations with custom properties
 
 In case you need to have additional properties in your many-to-many relationship, you have to create a new entity yourself.
-For example, if you would like entities `Post` and `Category` to have a many-to-many relationship with an additional `order` column, then you need to create an entity `PostToCategory` with two `ManyToOne` relations pointing in both directions and with custom columns in it:
+For example, if you would like entities `Question` and `Category` to have a many-to-many relationship with an additional `order` column, then you need to create an entity `QuestionToCategory` with two `ManyToOne` relations pointing in both directions and with custom columns in it:
 
 ```typescript
-import { Entity, Column, ManyToOne, PrimaryGeneratedColumn } from "typeorm"
-import { Post } from "./post"
-import { Category } from "./category"
+import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm'
+import { Category, Question } from '.'
 
-@Entity()
-export class PostToCategory {
-    @PrimaryGeneratedColumn()
-    public postToCategoryId: number
+@Entity({ name: 'question_to_category' })
+export class QuestionToCategory {
+    @ManyToOne(() => Question, (question) => question.questionToCategories)
+    @JoinColumn({ name: 'question_id' })
+    question: Question
+
+    @Column({
+        name: 'question_id',
+        primary: true,
+        nullable: false,
+    })
+    questionId: number
+
+    @ManyToOne(
+        () => Category,
+        (category) => category.questionToCategories,
+    )
+    @JoinColumn({ name: 'category_id' })
+    category: Category
+
+    @Column({
+        name: 'category_id',
+        primary: true,
+        nullable: false,
+    })
+    categoryId: number
 
     @Column()
-    public postId: number
-
-    @Column()
-    public categoryId: number
-
-    @Column()
-    public order: number
-
-    @ManyToOne(() => Post, (post) => post.postToCategories)
-    public post: Post
-
-    @ManyToOne(() => Category, (category) => category.postToCategories)
-    public category: Category
+    order: number
 }
+
 ```
 
-Additionally you will have to add a relationship like the following to `Post` and `Category`:
+Also you will have to add `@OneToMany` class properties to your `Category` and `Question`. Then you will be able to work with your relations in both ways:
+
+1. When it's important to know the `order` field you can use `question.questionToCategories[_].category` and `category.questionToCategories[_].category`
+2. When it's not important to know the `order` field you can use `question.categories[_]` or `category.questions[_]`
 
 ```typescript
 // category.ts
-...
-@OneToMany(() => PostToCategory, postToCategory => postToCategory.category)
-public postToCategories: PostToCategory[];
+import { Entity, PrimaryGeneratedColumn, Column, ManyToMany } from "typeorm"
+import { Question } from "./Question"
+import { QuestionToCategory } from "./QuestionToCategory"
 
-// post.ts
-...
-@OneToMany(() => PostToCategory, postToCategory => postToCategory.post)
-public postToCategories: PostToCategory[];
+@Entity()
+export class Category {
+    @PrimaryGeneratedColumn()
+    id: number
+
+    @Column()
+    name: string
+
+    @ManyToMany(() => Question, (question) => question.categories)
+    questions: Question[]
+
+    // added property
+    @OneToMany(() => QuestionToCategory, questionToCategory => questionToCategory.category)
+    questionToCategories: QuestionToCategory[]
+}
+```
+
+```typescript
+// question.ts
+import {
+    Entity,
+    PrimaryGeneratedColumn,
+    Column,
+    ManyToMany,
+    JoinTable,
+} from "typeorm"
+import { Category } from "./Category"
+import { QuestionToCategory } from "./QuestionToCategory"
+
+@Entity()
+export class Question {
+    @PrimaryGeneratedColumn()
+    id: number
+
+    @Column()
+    title: string
+
+    @Column()
+    text: string
+
+    @ManyToMany(() => Category, (category) => category.questions)
+    // updated config
+    @JoinTable({
+        name: 'question_to_category',
+        // synchronize is important flag! Without it your migrations will have two conflicting declarations for question_to_category table
+        // from https://github.com/typeorm/typeorm/blob/master/docs/decorator-reference.md#jointable
+        synchronize: false,
+        joinColumn: { name: 'question_id' },
+        inverseJoinColumn: { name: 'category_id' },
+    })
+    categories: Category[]
+
+    // added property
+    @OneToMany(() => QuestionToCategory, questionToCategory => questionToCategory.question)
+    questionToCategories: QuestionToCategory[]
+}
 ```
